@@ -85,6 +85,11 @@ int main(int argc, char** argv) {
 		fprintf(stderr, "error: Could not probe device\n");
 		return 2;
 	}
+	if (vid->usage_id != VOLUME_ID_FILESYSTEM) {
+		volume_id_close(vid);
+		fprintf(stderr, "error: Not a filesystem\n");
+		return 3;
+	}
 
 	write_pair("label", vid->label);
 	write_pair("uuid", vid->uuid);
