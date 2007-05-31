@@ -1,0 +1,11 @@
+UMass Mounter: Part II
+======================
+
+I left my thumb drive at work, so I wasn't able to get this up sooner.
+
+Quick recap: we can get volume names, we know how to get notified of the
+USB devices being plugged in and out, and we know how to map between umass
+devices and SCSI devices. Here's what's left to do:
+
+ * Write the script to respond to devices being plugged in and out
+ * Set up device permissions so user can mount the devices themselves.

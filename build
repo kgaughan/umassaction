@@ -1,0 +1,10 @@
+#!/bin/sh
+
+OPTS="-Wall -Os -DNDEBUG"
+HDIRS="-I/usr/local/include/"
+LDIRS="-L/usr/local/lib/"
+LIBS="-lvolume_id -lcam -lsbuf"
+DIR=`dirname $0`
+
+cc $OPTS $HDIRS $LDIRS $LIBS -o $DIR/bin/umassaction $DIR/src/umassaction.c
+strip -s $DIR/bin/umassaction

@@ -1,0 +1,34 @@
+Automounting USB Devices without the automount daemon (or HAL for that matter)
+==============================================================================
+
+Create a group called 'usb', and add any users you want to be able to access
+the USB devices to to that group.
+
+    pw addgroup usb -M keith,root
+
+As root, run the following:
+
+    cd /
+    mkdir media
+    chmod a+rwx media
+
+Edit /etd/devfs.rules, adding the following incantations allow access to any
+umass device by users in the group 'usb':
+
+    [localrules=10]
+    add path 'da*s*'  mode 0660 group usb
+    add path 'ugen*'  mode 0660 group usb
+    add path 'usb*'   mode 0660 group usb
+    add path 'umass*' mode 0660 group usb
+
+Create the file /usr/local/etc/devd/umass.conf and add the following:
+
+    attach 100 {
+        device-name "umass[0-9]+";
+        action "/bin/sleep 3; /etc/rc.d/devfs restart; /usr/local/share/umass/umassaction attach $device-name";
+    };
+    detatch 100 {
+        device-name "umass[0-9]+";
+        action "/usr/local/share/umass/umassaction detach $device-name";
+    };
+

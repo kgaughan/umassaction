@@ -1,0 +1,163 @@
+UMass Mounter: Part I
+=====================
+
+I've got a bit sick and tired of having to manually mount _umass_ devices and
+frankly, neither HAL nor _amd_ cut it for me, the former because it does an
+awful lot more than I really need and is only really usable within the
+confines of X, and the latter because it doesn't really have the flexibility
+to deal with transient devices. Moreover, I don't use GNOME or KDE and if
+you're using HAL, you need an appropriate volume manager. Until somebody,
+possibly me, writes a volume manager that doesn't depend on a particular
+desktop envirionment or that works with ROX, HAL is pretty much out of bounds.
+
+I've been hunting for a decent way of dealing with the situation, but all I
+keep on running into are articles telling me to use _amd_. I did, however,
+stumble across {http://caia.swin.edu.au/reports/041130A one decent article}
+which detailed how to use devd to detect a _umass_ device being attached and
+detached. I was still left with a problem: how do I map the _umass_ device
+reported to the appropriate SCSI device?
+
+More digging around, and everyone I read was saying that the only way of
+getting it all to work was to do some awkward nonsense parsing the output
+from _dmesg_. That's all well and fine if you don't value your sanity, but I
+do.
+
+I figured that seeing as _umass_ devices end up being seen as SCSI devices by
+the rest of the world, the best thing to do would be to parse the output from
+`camcontrol devlist -v`, and what do you know, I was right. All the data I
+needed was there is a relatively mungeable format.
+
+So to recap, we're detecting the device being attached and detached, and we
+know which SCSI device we're able to mount. Now all we need is somewhere to
+mount it.
+
+`/mnt` is out of the question however because it's only meant as a temporary
+mount point for use by the admin, however people might tend to abuse it.
+HAL does the right thing here by mounting everything under `/media`. In
+addition, we want to be able to mount multiple devices at once, so `/mnt` is
+dismissed for that reason too. The question arises, however, of what we're
+going to call the mount points under `/media`.
+
+Again, HAL, or more likely _gnome-volume-manager_, gets this right by using
+the volume labels as the names of the mount points. But there's no trivial
+way under FreeBSD, or any \*nix as best I know, to look this information
+up---it simply hasn't been all that useful, at least not till now.
+
+HAL might not be all that useful to me by itself, but I can always steal ideas
+from it, so I dug around the FreeBSD specific code to figure out how exactly
+it was managing to figure out the volume labels. I discovered it was using
+_libvolume\_id_ to dig out the data and I set about putting together a small
+wrapper around the library called _volumeinfo_ to allow the _umassaction_
+script I'll be coding up tomorrow---it responds to attach and detatch
+events---to figure out what it should call the mount point it'll be creating.
+Here's the code:
+
+=pre code
+/*
+ * volumeinfo.c
+ * by Keith Gaughan (http://talideon.com/)
+ *
+ * A wrapper around libvolume_id for getting information about a volume
+ * designated by a given special file.
+ *
+ * To compile (on FreeBSD), use:
+ *
+ *     gcc -Wall -Os -DNDEBUG \
+ *         -I/usr/local/include/ -L/usr/local/lib/ -lvolume_id \
+ *         -o volumeinfo volumeinfo.c
+ *     strip volumeinfo
+ *
+ * You will, of course, need libvolume_id.
+ *
+ * Copyright (c) Keith Gaughan, 2007.
+ *
+ * I'd like to put this under a BSD-style license, but because libvolume_id
+ * is covered by the GPL and not a more reasonable license like the LGPL, I
+ * guess this is, by extension, covered by the GPL. So until such time as I
+ * know for certain...
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.     See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+#include <assert.h>
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <sys/disk.h>
+#include <libvolume_id.h>
+
+struct volume_id* probe_node(const char* node) {
+    struct volume_id* vid;
+    off_t media_size;
+
+    assert(node != NULL);
+
+    vid = volume_id_open_node(node);
+    if (vid) {
+        ioctl(vid->fd, DIOCGMEDIASIZE, &media_size);
+        if (volume_id_probe_all(vid, 0, media_size) != 0) {
+            volume_id_close(vid);
+            vid = NULL;
+        }
+    }
+
+    return vid;
+}
+
+int main(int argc, char** argv) {
+    struct volume_id* vid;
+
+    if (argc < 2) {
+        fprintf(stderr, "usage: volumeinfo special\n");
+        return 1;
+    }
+
+    vid = probe_node(argv[1]);
+    if (!vid) {
+        fprintf(stderr, "error: Could not probe device\n");
+        return 2;
+    }
+    if (vid->usage_id != VOLUME_ID_FILESYSTEM) {
+        volume_id_close(vid);
+        fprintf(stderr, "error: Not a filesystem\n");
+        return 3;
+    }
+
+    if (strlen(vid->label) > 0) {
+        printf("label: %s\n", vid->label);
+    }
+    if (strlen(vid->uuid) > 0) {
+        printf("uuid: %s\n", vid->uuid);
+    }
+
+    volume_id_close(vid);
+
+    return 0;
+}
+=/pre
+
+Pretty simple. As a fallback, I'll be using the drive UUID if there's no
+appropriate label available.
+
+So the remaining problems are responding to the mount and unmount events,
+adding and removing entries from `/etc/fstab` to that _mount_ is able to
+mount the device properly, setting the appropriate permissions and ownership
+on the mount point to allow the user to mount the thing at all, and finally,
+cleaning up after the device is detatched. And did I mention that my external
+HDD takes a fair while to spin up and that the thumb drive I have has two
+partitions, one of which thinks it's a CD-ROM drive? But that's all for
+tomorrow.

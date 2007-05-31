@@ -1,0 +1,3 @@
+#!/bin/sh
+
+# /bin/sleep 3; /etc/rc.d/devfs restart
